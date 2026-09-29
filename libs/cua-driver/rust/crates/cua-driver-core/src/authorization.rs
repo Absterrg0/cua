@@ -874,6 +874,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "get_recording_state"
         | "check_for_update"
         | "health_report"
+        | "extension_status"
         | "probe" => RiskClass::R0,
 
         // Local reversible control and lifecycle operations.

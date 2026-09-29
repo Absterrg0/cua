@@ -1,0 +1,24 @@
+{
+  "$schema": "../cua-perception/trust-root.schema.json",
+  "schemaVersion": 1,
+  "publisherId": "absterrg0",
+  "publisherName": "Absterrg0",
+  "sourceRepository": "https://github.com/Absterrg0/cua",
+  "activeKeyId": "absterrg0-extension-ed25519-2026-09",
+  "keys": [
+    {
+      "keyId": "absterrg0-extension-ed25519-2026-09",
+      "algorithm": "Ed25519",
+      "publicKeyBase64": "9jcWK2xReXSHZoe1XQjaKGrkfxZdxtYEgniRIZBAOc0=",
+      "status": "active",
+      "validFromUnix": 1790640000,
+      "validUntilUnix": 2082758400,
+      "replaces": null
+    }
+  ],
+  "rotation": {
+    "minimumOverlapDays": 30,
+    "nextKeyId": null,
+    "privateKeysStoredInRepository": false
+  }
+}

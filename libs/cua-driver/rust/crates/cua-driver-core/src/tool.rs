@@ -386,6 +386,7 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "replay_trajectory" => &["recording.replay"],
         "install_ffmpeg" => &["recording.install_dependency"],
         "install_extension" => &["extension.install"],
+        "extension_status" => &["extension.status"],
 
         // ── cross-platform page ──────────────────────────────────────
         "page" => &["page.action"],
@@ -5553,6 +5554,7 @@ mod capability_tests {
         "replay_trajectory",
         "install_ffmpeg",
         "install_extension",
+        "extension_status",
         // misc
         "page",
         "check_for_update",
@@ -5644,6 +5646,7 @@ mod capability_tests {
         "recording.replay",
         "recording.install_dependency",
         "extension.install",
+        "extension.status",
         "visual.regions.parse",
         // page
         "page.action",

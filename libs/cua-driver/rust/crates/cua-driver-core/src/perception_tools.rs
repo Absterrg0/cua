@@ -106,8 +106,14 @@ impl Tool for ParseVisualRegionsTool {
             Ok(binding) => binding,
             Err(error) => return tool_error(error),
         };
-        let mut input: ParseVisualRegionsInput = match parse_typed_projection(&self.def.name, &args)
-        {
+        // The session label only selects the capture binding above; it is
+        // transport metadata, not a field of the typed request.
+        let mut typed_args = args.clone();
+        if let Some(fields) = typed_args.as_object_mut() {
+            fields.remove("session");
+        }
+        let mut input: ParseVisualRegionsInput =
+            match parse_typed_projection(&self.def.name, &typed_args) {
             Ok(input) => input,
             Err(result) => return result,
         };
