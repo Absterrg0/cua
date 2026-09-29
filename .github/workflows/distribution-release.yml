@@ -1,0 +1,263 @@
+name: "Distribution release: Driver SDK natives and signed Cua Perception"
+
+# Builds a downstream distribution of the Cua Driver SDK native libraries and
+# the Cua Perception extension. The Driver is built with the distribution's
+# publisher trust root (all six CUA_DRIVER_EXTENSION_* variables, read from
+# the trust root file) and every perception catalog is signed with the
+# matching key. Nothing here changes how upstream Cua signs or publishes.
+#
+# Required secret: DISTRIBUTION_EXTENSION_SIGNING_KEY_PEM, the Ed25519 private
+# key (PKCS#8 PEM) whose public half is the trust root's active key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      trust_root:
+        description: Distribution trust root file
+        default: .github/releases/absterrg0/trust-root.json
+      sdk_version:
+        description: Version for the native npm packages, such as 0.30.4-absterrg0.1
+        required: true
+      release_tag:
+        description: Tag to publish, such as absterrg0-v0.30.4-1
+        required: true
+      catalog_version:
+        description: Anti-rollback catalog version (strictly increasing)
+        required: true
+        default: "1"
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_SDK_VERSION: "0.30.4"
+  CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
+  CUA_TELEMETRY_ENABLED: "false"
+
+jobs:
+  convert:
+    name: Convert icon_detect_v3
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Export and verify the byte-reproducible ONNX
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            --index-url https://download.pytorch.org/whl/cpu torch==2.8.0
+          python -m pip install --disable-pip-version-check onnx==1.19.0
+          recipe=libs/cua-driver/rust/crates/cua-perception/models/conversion-recipe.json
+          url=$(python -c "import json;print(json.load(open('$recipe'))['input']['url'])")
+          sha=$(python -c "import json;print(json.load(open('$recipe'))['input']['sha256'])")
+          out=$(python -c "import json;print(json.load(open('$recipe'))['expected_output']['sha256'])")
+          curl -fsSL -o model.pt "$url"
+          echo "$sha  model.pt" | sha256sum -c -
+          mkdir -p reviewed-inputs
+          python libs/cua-driver/rust/crates/cua-perception/models/export_icon_detect_v3.py \
+            model.pt reviewed-inputs/omniparser-icon-detect-v3-1280-opset17.onnx \
+            --expected-output-sha256 "$out"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: detector
+          path: reviewed-inputs/
+          retention-days: 7
+
+  native:
+    name: native ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            container: debian:11
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            container: ""
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            container: ""
+    runs-on: ${{ matrix.runner }}
+    # Debian 11 keeps the Linux glibc floor at 2.31, as upstream releases do.
+    container: ${{ matrix.container || null }}
+    timeout-minutes: 120
+    steps:
+      - name: Install base tooling
+        if: matrix.container != ''
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates curl python3 \
+            build-essential pkg-config libx11-dev libxi-dev libxtst-dev libxext-dev \
+            libwayland-dev libxkbcommon-dev
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
+      - name: Publisher root from the trust root file
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${{ inputs.trust_root }}" >> "$GITHUB_ENV" <<'EOF'
+          import json, sys
+          root = json.load(open(sys.argv[1]))
+          key = next(k for k in root["keys"] if k["keyId"] == root["activeKeyId"])
+          print("CUA_DRIVER_EXTENSION_PUBLISHER_ID=" + root["publisherId"])
+          print("CUA_DRIVER_EXTENSION_PUBLISHER_NAME=" + root["publisherName"])
+          print("CUA_DRIVER_EXTENSION_KEY_ID=" + key["keyId"])
+          print("CUA_DRIVER_EXTENSION_PUBLIC_KEY_BASE64=" + key["publicKeyBase64"])
+          print("CUA_DRIVER_EXTENSION_KEY_VALID_FROM_UNIX=" + str(key["validFromUnix"]))
+          print("CUA_DRIVER_EXTENSION_KEY_VALID_UNTIL_UNIX=" + str(key["validUntilUnix"]))
+          EOF
+      - name: Build the SDK and the perception worker
+        shell: bash
+        working-directory: libs/cua-driver/rust
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p cua-driver-sdk -p cua-perception
+          mkdir -p ../../../native-out
+          for file in libcua_driver_sdk.so libcua_driver_sdk.dylib cua_driver_sdk.dll \
+            cua-perception cua-perception.exe; do
+            if [[ -f "target/release/$file" ]]; then cp "target/release/$file" ../../../native-out/; fi
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-${{ matrix.target }}
+          path: native-out/
+          retention-days: 7
+
+  package:
+    name: package ${{ matrix.target }}
+    needs: [convert, native]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            npm: linux-x64-gnu
+            library: libcua_driver_sdk.so
+            worker: cua-perception
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            npm: darwin-arm64
+            library: libcua_driver_sdk.dylib
+            worker: cua-perception
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            npm: win32-x64-msvc
+            library: cua_driver_sdk.dll
+            worker: cua-perception.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install release validators
+        shell: bash
+        run: python -m pip install --disable-pip-version-check --require-hashes -r .github/releases/cua-perception/test-requirements.lock
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: detector
+          path: reviewed-inputs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-${{ matrix.target }}
+          path: native
+      - name: Assemble, gate, package and sign Cua Perception
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.DISTRIBUTION_EXTENSION_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          chmod +x "native/${{ matrix.worker }}" || true
+          version=$(cat libs/cua-driver/rust/crates/cua-perception/VERSION)
+          out="$RUNNER_TEMP/out"; mkdir -p "$out/release"
+          bundle="$RUNNER_TEMP/cua-perception-$version-${{ matrix.target }}"
+          crate=libs/cua-driver/rust/crates/cua-perception
+          python "$crate/scripts/assemble_bundle.py" \
+            --target "${{ matrix.target }}" --worker "native/${{ matrix.worker }}" \
+            --inputs reviewed-inputs --cache "$RUNNER_TEMP/cache" \
+            --real-parse-fixture "$crate/tests/quality-corpus/images/native-controls-light.png" \
+            --source-sha "$(git rev-parse HEAD)" \
+            --source-repository "https://github.com/${{ github.repository }}" \
+            --version "$version" --output "$bundle"
+          python .github/scripts/perception_release.py validate \
+            --manifest "$bundle/artifact-manifest.json" --payload-root "$bundle"
+          python .github/scripts/perception_release.py run-gates \
+            --manifest "$bundle/artifact-manifest.json" --payload-root "$bundle" \
+            --evidence "$RUNNER_TEMP/executed.json"
+          key_id=$(python -c "import json;print(json.load(open('${{ inputs.trust_root }}'))['activeKeyId'])")
+          python .github/scripts/perception_release.py package \
+            --manifest "$bundle/artifact-manifest.json" --payload-root "$bundle" \
+            --output "$out/catalog" --executed-evidence "$RUNNER_TEMP/executed.json" \
+            --key-id "$key_id" --catalog-version "${{ inputs.catalog_version }}" \
+            --expires-unix "$(( $(date -u +%s) + 365 * 86400 ))" \
+            --trust-root "${{ inputs.trust_root }}"
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing.pem"
+          node .github/scripts/sign_extension_catalog.mjs "$out/catalog/catalog-payload.json" \
+            "$RUNNER_TEMP/signing.pem" "${{ inputs.trust_root }}" "$out/catalog"
+          rm -f "$RUNNER_TEMP/signing.pem"
+          t="${{ matrix.target }}"
+          cp "$out/catalog/cua-perception-$version-$t.tar.gz" "$out/release/"
+          cp "$out/catalog/signed-catalog.json" "$out/release/cua-perception-$version-$t.catalog.json"
+          cp "$out/catalog/sbom.spdx.json" "$out/release/cua-perception-$version-$t.sbom.spdx.json"
+          cp "$out/catalog/provenance.redacted.json" "$out/release/cua-perception-$version-$t.provenance.json"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+      - name: Pack the native SDK npm package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="@trycua/cua-driver-${{ matrix.npm }}"
+          stage="$RUNNER_TEMP/npm"; mkdir -p "$stage"
+          # The Electron-compatible Node runtime is unchanged from upstream;
+          # take it from the matching published package.
+          ( cd "$RUNNER_TEMP" && npm pack "$name@$UPSTREAM_SDK_VERSION" --silent > upstream.txt )
+          tar -xzf "$RUNNER_TEMP/$(cat "$RUNNER_TEMP/upstream.txt")" -C "$stage"
+          cp "native/${{ matrix.library }}" "$stage/package/"
+          node -e '
+            const fs = require("fs"); const p = process.argv[1] + "/package/package.json";
+            const m = JSON.parse(fs.readFileSync(p)); m.version = process.argv[2];
+            m.description += " (distribution build with a downstream extension trust root)";
+            fs.writeFileSync(p, JSON.stringify(m, null, 2) + "\n");' "$stage" "${{ inputs.sdk_version }}"
+          ( cd "$stage/package" && npm pack --pack-destination "$OUT/release" )
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ env.OUT }}/release/
+          retention-days: 7
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum * > SHA256SUMS
+          gh release create "${{ inputs.release_tag }}" * \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
+            --title "${{ inputs.release_tag }}" \
+            --notes "Driver SDK natives built with the distribution extension trust root, and Cua Perception with the MIT icon_detect_v3 detector, signed for that root."
