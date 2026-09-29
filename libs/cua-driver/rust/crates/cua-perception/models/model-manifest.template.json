@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "identity": {
-    "name": "omniparser-v2-ppocrv5-en",
-    "version": "2026-09-17",
+    "name": "omniparser-icon-detect-v3-ppocrv5-en",
+    "version": "2026-09-29",
     "source_url": "https://huggingface.co/microsoft/OmniParser-v2.0",
-    "source_revision": "6600256cb0f1b07651e3bc86166196307bad7e2d",
-    "license": "AGPL-3.0 (detector); Apache-2.0 (OCR)"
+    "source_revision": "f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4",
+    "license": "MIT (detector); Apache-2.0 (OCR)"
   },
   "onnx_runtime": {
     "version": "1.26.0",
@@ -15,16 +15,16 @@
   },
   "detector": {
     "model": {
-      "path": "artifacts/omniparser-icon-detect-1280-opset17.onnx",
-      "sha256": "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2"
+      "path": "artifacts/omniparser-icon-detect-v3-1280-opset17.onnx",
+      "sha256": "67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb"
     },
     "input_name": "images",
-    "output_name": "output0",
+    "output_name": "detections",
     "input_width": 1280,
     "input_height": 1280,
-    "confidence_threshold": 0.3,
+    "confidence_threshold": 0.05,
     "iou_threshold": 0.1,
-    "output_layout": "yolo_v8_cxcywh_class_scores",
+    "output_layout": "xyxy_score_class",
     "max_candidates": 10000,
     "max_detections": 1000
   },

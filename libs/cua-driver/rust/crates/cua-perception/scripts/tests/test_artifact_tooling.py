@@ -22,11 +22,18 @@ from artifact_tooling import (  # noqa: E402
     sha256,
     static_verify,
     verify_corresponding_sources,
+    verify_permissive_bundle,
 )
 import assemble_bundle  # noqa: E402
 import verify_bundle  # noqa: E402
 from assemble_bundle import immutable_url  # noqa: E402
 from verify_bundle import source_inspection  # noqa: E402
+
+
+def sha256_bytes(contents: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(contents).hexdigest()
 
 
 def write(path: Path, contents: bytes) -> None:
@@ -67,25 +74,85 @@ class ArtifactToolingTests(unittest.TestCase):
                 f"{root}/ThirdPartyNotices.txt": "onnxruntime-ThirdPartyNotices.txt",
             }, target)
 
-    def test_conversion_recipe_pins_input_exporter_sources_command_and_no_patches(self) -> None:
+    def test_conversion_recipe_pins_the_mit_detector_input_command_and_output(self) -> None:
         lock = json.loads(LOCK_PATH.read_text())
         recipe = json.loads((CRATE_DIR / "models/conversion-recipe.json").read_text())
-        materials = lock["corresponding_source"]
-        source_input = next(item for item in materials if item["content_kind"] == "model-source-input")
-        exporters = [item for item in materials if item["content_kind"] == "exporter-source"]
-        self.assertEqual(source_input["sha256"], recipe["input"]["sha256"])
-        self.assertEqual(source_input["size"], recipe["input"]["size"])
+        detector = next(item for item in lock["artifacts"] if item["role"] == "icon-detect")
+        self.assertEqual(detector["license"], "MIT")
+        self.assertEqual(detector["source_sha256"], recipe["input"]["sha256"])
+        self.assertEqual(detector["source_size"], recipe["input"]["size"])
+        immutable_url(detector["source_url"])
+        immutable_url(detector["source_license_url"])
         self.assertEqual(recipe["patches"], [])
-        self.assertEqual(recipe["command"][1], "models/export_omniparser_detector.py")
-        self.assertEqual(
-            {item["filename"].split("-", 1)[0] for item in exporters},
-            {"ultralytics", "pytorch", "torchvision", "onnx", "onnxslim"},
-        )
-        for item in materials:
-            immutable_url(item["url"])
-            self.assertEqual(len(item["sha256"]), 64)
-            self.assertGreater(item["size"], 0)
-        self.assertEqual(recipe["expected_output"]["sha256"], "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2")
+        self.assertEqual(recipe["command"][1], "models/export_icon_detect_v3.py")
+        self.assertEqual(recipe["expected_output"]["sha256"], detector["sha256"])
+        self.assertEqual(recipe["expected_output"]["size"], detector["size"])
+        # The MIT detector needs no bundled corresponding source.
+        self.assertEqual(lock["corresponding_source"], [])
+
+    def test_lock_prohibits_the_retired_agpl_detector_and_exporter(self) -> None:
+        lock = json.loads(LOCK_PATH.read_text())
+        prohibited = {item["sha256"] for item in lock["prohibited_artifacts"]}
+        self.assertEqual(prohibited, {
+            "dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57",
+            "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2",
+            "6c289215a5ce593a872111b87e58ffff6949d235c2af720e8f01704375f7bf44",
+        })
+        for item in lock["artifacts"]:
+            self.assertNotIn(item["sha256"], prohibited)
+            self.assertNotIn("AGPL", item["license"])
+
+    def permissive_fixture(self, root: Path) -> tuple[dict, dict]:
+        write(root / "model-manifest.json", json.dumps({"identity": {"license": "MIT (detector); Apache-2.0 (OCR)"}}).encode())
+        write(root / "models/detector.onnx", b"clean-detector")
+        manifest = {"artifacts": [{"path": "models/detector.onnx", "license": {"spdx": "MIT"}}]}
+        lock = {
+            "prohibited_artifacts": [{"reason": "retired AGPL detector", "sha256": sha256_bytes(b"agpl-detector")}],
+            "prohibited_license_markers": ["AGPL", "GPL-3.0"],
+            "prohibited_name_markers": ["ultralytics"],
+        }
+        return manifest, lock
+
+    def test_permissive_bundle_accepts_a_clean_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, lock = self.permissive_fixture(root)
+            verify_permissive_bundle(root, manifest, lock)
+
+    def test_permissive_bundle_rejects_a_renamed_prohibited_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, lock = self.permissive_fixture(root)
+            write(root / "models/innocent.onnx", b"agpl-detector")
+            with self.assertRaisesRegex(ArtifactError, "models/innocent.onnx is prohibited: retired AGPL detector"):
+                verify_permissive_bundle(root, manifest, lock)
+
+    def test_permissive_bundle_rejects_a_prohibited_file_nested_in_an_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, lock = self.permissive_fixture(root)
+            archive = root / "source/nested.tar.gz"
+            archive.parent.mkdir(parents=True)
+            with tarfile.open(archive, "w:gz") as package:
+                info = tarfile.TarInfo("snapshot/weights.bin")
+                info.size = len(b"agpl-detector")
+                package.addfile(info, io.BytesIO(b"agpl-detector"))
+            with self.assertRaisesRegex(ArtifactError, "nested.tar.gz member snapshot/weights.bin is prohibited"):
+                verify_permissive_bundle(root, manifest, lock)
+
+    def test_permissive_bundle_rejects_prohibited_names_and_licenses(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, lock = self.permissive_fixture(root)
+            write(root / "source/ultralytics-snapshot.txt", b"x")
+            with self.assertRaisesRegex(ArtifactError, "prohibited path source/ultralytics-snapshot.txt"):
+                verify_permissive_bundle(root, manifest, lock)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, lock = self.permissive_fixture(root)
+            manifest["artifacts"][0]["license"]["spdx"] = "AGPL-3.0-only"
+            with self.assertRaisesRegex(ArtifactError, "declares prohibited license AGPL-3.0-only"):
+                verify_permissive_bundle(root, manifest, lock)
 
     def source_fixture(self, root: Path) -> tuple[dict, dict]:
         archive = root / "source/cua-perception-source.tar.gz"
@@ -293,7 +360,11 @@ class ArtifactToolingTests(unittest.TestCase):
                         "revision": "b" * 40,
                         "license": "MIT",
                         "verification_status": "reviewed",
+                        "source_url": "https://example.invalid/model.pt",
                         "source_sha256": "c" * 64,
+                        "source_size": 1,
+                        "source_license_url": "https://example.invalid/LICENSE",
+                        "source_license_sha256": "f" * 64,
                     }
                 )
 
@@ -329,6 +400,7 @@ class ArtifactToolingTests(unittest.TestCase):
                 cache=root / "cache",
                 real_parse_fixture=fixture,
                 source_sha="a" * 40,
+                source_repository="https://github.com/trycua/cua",
                 version="1.2.3",
                 output=output,
             )
@@ -368,8 +440,8 @@ class ArtifactToolingTests(unittest.TestCase):
                     if item["kind"] == "notice" and item["path"].startswith("licenses/")
                 }
                 self.assertEqual(notices, {
-                    "licenses/AGPL-3.0-only.txt": "AGPL-3.0-only",
                     "licenses/Apache-2.0.txt": "Apache-2.0",
+                    "licenses/MIT-OmniParser-icon_detect_v3.txt": "MIT",
                     "licenses/onnxruntime-LICENSE.txt": "MIT",
                     "licenses/onnxruntime-ThirdPartyNotices.txt": "MIT",
                 })

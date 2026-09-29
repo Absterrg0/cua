@@ -266,10 +266,72 @@ def verify_corresponding_sources(bundle: Path, manifest: dict[str, Any], lock: d
             raise ArtifactError(f"pinned source material differs from the artifact lock: {name}")
         if entry.get("revision") != pinned["revision"] or entry.get("contentKind") != pinned["content_kind"]:
             raise ArtifactError(f"source ledger revision or kind differs from the artifact lock: {name}")
-    model_source = ledger_entries.get("omniparser-icon-detect-model.pt")
-    if not model_source or model_source.get("contentKind") != "model-source-input":
-        raise ArtifactError("exact OmniParser source model is not bundled")
     return entries
+
+
+def _prohibited_name(name: str, markers: list[str]) -> str | None:
+    lowered = name.lower()
+    return next((marker for marker in markers if marker.lower() in lowered), None)
+
+
+def _scan_archive_members(path: Path, prohibited: dict[str, str], markers: list[str]) -> None:
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            for member in archive.getmembers():
+                marker = _prohibited_name(member.name, markers)
+                if marker is not None:
+                    raise ArtifactError(f"{path.name} contains prohibited member {member.name} ({marker})")
+                if not member.isfile():
+                    continue
+                stream = archive.extractfile(member)
+                if stream is None:
+                    continue
+                digest = hashlib.sha256()
+                with stream:
+                    for block in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(block)
+                if digest.hexdigest() in prohibited:
+                    raise ArtifactError(
+                        f"{path.name} member {member.name} is prohibited: {prohibited[digest.hexdigest()]}"
+                    )
+    except tarfile.TarError as error:
+        raise ArtifactError(f"cannot scan archive {path}: {error}") from error
+
+
+def verify_permissive_bundle(bundle: Path, manifest: dict[str, Any], lock: dict[str, Any]) -> None:
+    """Fail when a bundle carries a prohibited artifact, name, or copyleft license.
+
+    The lock names artifacts that must never ship again (the AGPL detector, its
+    conversion, and the exporter source bundled for it). Every file is hashed,
+    including every member of every bundled tar.gz, so a renamed or nested copy
+    is still found. Declared licenses are checked for copyleft markers.
+    """
+    prohibited = {entry["sha256"]: entry["reason"] for entry in lock.get("prohibited_artifacts", [])}
+    name_markers = list(lock.get("prohibited_name_markers", []))
+    license_markers = list(lock.get("prohibited_license_markers", []))
+    for path in sorted(bundle.rglob("*")):
+        if path.is_symlink():
+            raise ArtifactError(f"bundle cannot contain symlinks: {path}")
+        relative = path.relative_to(bundle).as_posix()
+        marker = _prohibited_name(relative, name_markers)
+        if marker is not None:
+            raise ArtifactError(f"bundle contains prohibited path {relative} ({marker})")
+        if not path.is_file():
+            continue
+        digest = sha256(path)
+        if digest in prohibited:
+            raise ArtifactError(f"bundle file {relative} is prohibited: {prohibited[digest]}")
+        if path.name.endswith(".tar.gz"):
+            _scan_archive_members(path, prohibited, name_markers)
+    for artifact in manifest.get("artifacts", []):
+        spdx = str(artifact.get("license", {}).get("spdx", ""))
+        marker = _prohibited_name(spdx, license_markers)
+        if marker is not None:
+            raise ArtifactError(f"artifact {artifact.get('path')} declares prohibited license {spdx}")
+    identity_license = str(read_json(bundle / "model-manifest.json")["identity"]["license"])
+    marker = _prohibited_name(identity_license, license_markers)
+    if marker is not None:
+        raise ArtifactError(f"model manifest declares prohibited license {identity_license}")
 
 
 def static_verify(bundle: Path, require_host: bool = True) -> dict[str, Any]:
@@ -318,6 +380,7 @@ def static_verify(bundle: Path, require_host: bool = True) -> dict[str, Any]:
             raise ArtifactError(f"{role} differs from the pinned artifact lock")
     if manifest.get("sourceLedger"):
         verify_corresponding_sources(bundle, manifest, lock)
+    verify_permissive_bundle(bundle, manifest, lock)
     sums_path = bundle / "SHA256SUMS"
     if sums_path.exists():
         for line in sums_path.read_text(encoding="utf-8").splitlines():

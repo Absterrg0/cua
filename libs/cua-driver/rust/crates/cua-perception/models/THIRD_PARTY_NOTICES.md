@@ -5,8 +5,9 @@ components. Exact revisions and SHA-256 digests are recorded in
 `model-ledger.json` and `source-inventory.json` in each bundle. The full
 license texts are in this `notices/` directory:
 
-- `AGPL-3.0-only.txt`: GNU Affero General Public License, version 3.
 - `Apache-2.0.txt`: Apache License, Version 2.0.
+- `MIT-OmniParser-icon_detect_v3.txt`: the MIT License file Microsoft publishes
+  beside the `icon_detect_v3` weights.
 - `onnxruntime-LICENSE.txt` and `onnxruntime-ThirdPartyNotices.txt`: the MIT
   License and third-party notices shipped with the pinned ONNX Runtime archive.
 
@@ -24,20 +25,18 @@ identify the exact archive and library.
 ## OmniParser icon detector
 
 The converted icon detector derives from Microsoft OmniParser v2.0 revision
-`6600256cb0f1b07651e3bc86166196307bad7e2d`. This source model and the converted
-detector are licensed under AGPL-3.0-only, which comes from the Ultralytics
-YOLO model the detector was fine-tuned from. Cua distributes the detector under
-that license and does not relicense it. `SOURCE_OFFER.md` describes the bundled
-corresponding source. If you redistribute this bundle, or let users interact
-with the detector over a network, the AGPL-3.0 obligations apply to you.
+`f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4`, file `icon_detect_v3/model.pt`.
+Microsoft trained it from YOLOv9-E with the MIT-licensed
+MultimediaTechLab/YOLO implementation and publishes it under the MIT License,
+in `icon_detect_v3/LICENSE` at that revision. The license text is copied
+verbatim into `licenses/MIT-OmniParser-icon_detect_v3.txt`. Copyright (c)
+Microsoft Corporation.
 
-## Bundled exporter source snapshots
-
-The bundle includes a pinned Ultralytics source snapshot licensed under
-AGPL-3.0-only, PyTorch and torchvision snapshots licensed under BSD-3-Clause,
-and ONNX and OnnxSlim snapshots licensed under Apache-2.0. Each snapshot
-archive keeps its own license file. Exact revisions, archive hashes, and
-required contents are in `source-ledger.json`.
+The conversion wraps the published TorchScript module with the decoding from
+the upstream model card and exports it to ONNX with PyTorch. No Ultralytics
+code, weights, or exporter source is used or shipped. The earlier AGPL-3.0
+`icon_detect` detector is not part of this bundle, and the release check
+rejects its known digests.
 
 ## PaddleOCR models and dictionary
 

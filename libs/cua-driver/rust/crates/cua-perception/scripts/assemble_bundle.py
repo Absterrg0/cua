@@ -99,7 +99,7 @@ RUNTIME_NOTICE_FILES = {
     "LICENSE": "onnxruntime-LICENSE.txt",
     "ThirdPartyNotices.txt": "onnxruntime-ThirdPartyNotices.txt",
 }
-LICENSE_TEXTS = ("AGPL-3.0-only.txt", "Apache-2.0.txt")
+LICENSE_TEXTS = ("Apache-2.0.txt", "MIT-OmniParser-icon_detect_v3.txt")
 
 
 def runtime_notice_members(target_lock: dict[str, Any]) -> dict[str, str]:
@@ -203,11 +203,11 @@ def model_manifest(lock: dict[str, Any], target: str) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "identity": {
-            "name": "omniparser-v2-ppocrv5-en",
-            "version": "2026-09-17",
+            "name": "omniparser-icon-detect-v3-ppocrv5-en",
+            "version": "2026-09-29",
             "source_url": "https://huggingface.co/microsoft/OmniParser-v2.0",
             "source_revision": artifacts["icon-detect"]["revision"],
-            "license": "AGPL-3.0-only (detector); Apache-2.0 (OCR)",
+            "license": "MIT (detector); Apache-2.0 (OCR)",
         },
         "onnx_runtime": {
             "version": lock["onnx_runtime"]["version"],
@@ -217,9 +217,12 @@ def model_manifest(lock: dict[str, Any], target: str) -> dict[str, Any]:
         },
         "detector": {
             "model": {"path": f"models/{artifacts['icon-detect']['filename']}", "sha256": artifacts["icon-detect"]["sha256"]},
-            "input_name": "images", "output_name": "output0", "input_width": 1280,
-            "input_height": 1280, "confidence_threshold": 0.3, "iou_threshold": 0.1,
-            "output_layout": "yolo_v8_cxcywh_class_scores",
+            # icon_detect_v3 is deliberately low-confidence on small controls;
+            # 0.05 is the upstream model card's threshold. Callers raise it per
+            # parse with min_confidence.
+            "input_name": "images", "output_name": "detections", "input_width": 1280,
+            "input_height": 1280, "confidence_threshold": 0.05, "iou_threshold": 0.1,
+            "output_layout": "xyxy_score_class",
             "max_candidates": 10000, "max_detections": 1000,
         },
         "ocr": {
@@ -251,17 +254,15 @@ def model_ledger(lock: dict[str, Any]) -> dict[str, Any]:
             "artifactSize": entry["size"], "origin": entry["origin"],
             "revision": entry["revision"], "license": entry["license"],
             "redistributionAllowed": True, "verificationStatus": entry["verification_status"],
-            "exportSource": "source/cua-perception-source.tar.gz contains models/conversion-recipe.json and models/export_omniparser_detector.py; principal exporter sources are bundled under source/exporter/",
+            "exportSource": "source/cua-perception-source.tar.gz contains models/conversion-recipe.json and models/export_icon_detect_v3.py",
         }
         if entry["role"] == "icon-detect":
             model["sourceArtifact"] = {
-                "artifact": "omniparser-icon-detect-model.pt",
-                "path": "source/upstream/omniparser-icon-detect-model.pt",
-                "sha256": entry["source_sha256"], "size": 40623819
+                "artifact": "icon_detect_v3/model.pt", "url": entry["source_url"],
+                "sha256": entry["source_sha256"], "size": entry["source_size"],
+                "license": entry["license"], "licenseUrl": entry["source_license_url"],
+                "licenseSha256": entry["source_license_sha256"],
             }
-            model["usageRestrictions"] = [
-                "AGPL-3.0-only: redistribution, and network use of this converted model, require the corresponding source bundled under source/; see THIRD_PARTY_NOTICES.md and SOURCE_OFFER.md"
-            ]
         models.append(model)
     return {"schemaVersion": 1, "models": models}
 
@@ -285,7 +286,9 @@ def artifact(
     }
 
 
-def release_manifest(bundle: Path, lock: dict[str, Any], target: str, version: str, revision: str) -> dict[str, Any]:
+def release_manifest(
+    bundle: Path, lock: dict[str, Any], target: str, version: str, revision: str, repository: str
+) -> dict[str, Any]:
     target_lock = lock["onnx_runtime"]["targets"][target]
     target_value = {"triple": target, "os": target_lock["os"], "arch": target_lock["arch"]}
     entries = [
@@ -307,9 +310,11 @@ def release_manifest(bundle: Path, lock: dict[str, Any], target: str, version: s
     entries.extend([
         artifact(bundle / "model-manifest.json", bundle, "model-manifest", "MIT"),
         artifact(bundle / "THIRD_PARTY_NOTICES.md", bundle, "notice", "MIT", notice=False),
-        artifact(bundle / "SOURCE_OFFER.md", bundle, "notice", "AGPL-3.0-only", notice=False),
-        artifact(bundle / "licenses/AGPL-3.0-only.txt", bundle, "notice", "AGPL-3.0-only", notice=False),
         artifact(bundle / "licenses/Apache-2.0.txt", bundle, "notice", "Apache-2.0", notice=False),
+        artifact(
+            bundle / "licenses/MIT-OmniParser-icon_detect_v3.txt", bundle, "notice", "MIT", notice=False,
+            source_url="https://huggingface.co/microsoft/OmniParser-v2.0",
+        ),
         artifact(
             bundle / "licenses/onnxruntime-LICENSE.txt", bundle, "notice", "MIT", notice=False,
             source_url="https://github.com/microsoft/onnxruntime",
@@ -318,7 +323,7 @@ def release_manifest(bundle: Path, lock: dict[str, Any], target: str, version: s
             bundle / "licenses/onnxruntime-ThirdPartyNotices.txt", bundle, "notice", "MIT", notice=False,
             source_url="https://github.com/microsoft/onnxruntime",
         ),
-        artifact(bundle / "source/cua-perception-source.tar.gz", bundle, "source", "MIT"),
+        artifact(bundle / "source/cua-perception-source.tar.gz", bundle, "source", "MIT", source_url=repository),
         artifact(bundle / "verification/health.json", bundle, "supplied-verification-report", "MIT", role="health"),
         artifact(bundle / "verification/self-test.json", bundle, "supplied-verification-report", "MIT", role="self-test"),
         artifact(bundle / "verification/real-parse.json", bundle, "supplied-verification-report", "MIT", role="real-parse"),
@@ -330,7 +335,7 @@ def release_manifest(bundle: Path, lock: dict[str, Any], target: str, version: s
         ))
     return {
         "schemaVersion": 1, "component": "cua-perception", "version": version,
-        "driverVersion": ">=0.28.2", "sourceSha": revision, "target": target_value,
+        "driverVersion": ">=0.30.4", "sourceSha": revision, "target": target_value,
         "protocol": {"name": "cua-perception-worker", "version": 1}, "artifacts": entries,
         "modelLedger": "model-ledger.json", "sourceLedger": "source-ledger.json",
         "suppliedVerification": {"health": "verification/health.json", "selfTest": "verification/self-test.json", "realParse": "verification/real-parse.json"},
@@ -399,19 +404,18 @@ def assemble(args: argparse.Namespace) -> tuple[Path, Path]:
             shutil.copyfile(source_material, destination)
         write_json(bundle / "model-manifest.json", model_manifest(lock, args.target))
         shutil.copyfile(CRATE_DIR / "models/THIRD_PARTY_NOTICES.md", bundle / "THIRD_PARTY_NOTICES.md")
-        shutil.copyfile(CRATE_DIR / "models/SOURCE_OFFER.md", bundle / "SOURCE_OFFER.md")
         write_json(bundle / "model-ledger.json", model_ledger(lock))
         source = bundle / "source/cua-perception-source.tar.gz"
         corresponding_source(repo, args.source_sha, source)
         source_entries = [{
                 "artifact": source.name, "artifactSha256": sha256(source), "artifactSize": source.stat().st_size,
-                "repository": "https://github.com/trycua/cua", "revision": args.source_sha, "license": "MIT",
+                "repository": args.source_repository, "revision": args.source_sha, "license": "MIT",
                 "durableLocation": f"Candidate archive {source.relative_to(bundle).as_posix()}",
                 "sourceOfferStatus": "bundled", "contentKind": "cua-source",
                 "format": "tar.gz", "requiredPaths": [
                     *SOURCE_PATHS,
                     "libs/cua-driver/rust/crates/cua-perception/models/conversion-recipe.json",
-                    "libs/cua-driver/rust/crates/cua-perception/models/export_omniparser_detector.py",
+                    "libs/cua-driver/rust/crates/cua-perception/models/export_icon_detect_v3.py",
                     "libs/cua-driver/rust/crates/cua-perception/scripts/artifacts.lock.json",
                 ], "patches": [],
             }]
@@ -430,10 +434,10 @@ def assemble(args: argparse.Namespace) -> tuple[Path, Path]:
         source_ledger = {"schemaVersion": 1, "sources": source_entries}
         write_json(bundle / "source-ledger.json", source_ledger)
         write_json(bundle / "source-inventory.json", {
-            "schema_version": 1, "component": "cua-perception", "repository": "https://github.com/trycua/cua",
+            "schema_version": 1, "component": "cua-perception", "repository": args.source_repository,
             "revision": args.source_sha,
             "archive": {"path": source.relative_to(bundle).as_posix(), "sha256": sha256(source), "size": source.stat().st_size},
-            "included_paths": list(SOURCE_PATHS), "source_offer": "SOURCE_OFFER.md",
+            "included_paths": list(SOURCE_PATHS),
             "bundled_upstream_sources": [
                 {"component": entry["content_kind"], "path": entry["bundle_path"],
                  "url": entry["url"], "revision": entry["revision"],
@@ -449,13 +453,13 @@ def assemble(args: argparse.Namespace) -> tuple[Path, Path]:
                 "component": "onnx-runtime-cpu-archive", "url": target_lock["archive_url"],
                 "sha256": target_lock["archive_sha256"],
             }],
-            "review_status": "maintainer-approved-agpl-distribution",
+            "review_status": "permissive-distribution",
         })
         fixture = bundle / "verification/known-answer.png"
         fixture.parent.mkdir()
         shutil.copyfile(args.real_parse_fixture, fixture)
         exercise_bundle(bundle, args.target, fixture, identity, fixture.parent)
-        write_json(bundle / "artifact-manifest.json", release_manifest(bundle, lock, args.target, args.version, args.source_sha))
+        write_json(bundle / "artifact-manifest.json", release_manifest(bundle, lock, args.target, args.version, args.source_sha, args.source_repository))
         write_sums(bundle)
         static_verify(bundle)
         archive = bundle.parent / f"cua-perception-{args.version}-{args.target}.tar.gz"
@@ -476,6 +480,11 @@ def main() -> int:
     parser.add_argument("--cache", required=True, type=Path, help="content-verified immutable download cache")
     parser.add_argument("--real-parse-fixture", required=True, type=Path)
     parser.add_argument("--source-sha", required=True)
+    parser.add_argument(
+        "--source-repository",
+        default="https://github.com/trycua/cua",
+        help="public repository that holds --source-sha, recorded in the source ledger",
+    )
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()

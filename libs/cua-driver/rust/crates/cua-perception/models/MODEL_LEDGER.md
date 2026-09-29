@@ -6,36 +6,42 @@ copy of `model-manifest.template.json`, replace the platform-specific ONNX
 Runtime fields, and preserve the listed hashes. The worker performs no network
 access and refuses missing or mismatched files before creating a model session.
 
-## OmniParser icon detector
+## OmniParser icon detector (icon_detect_v3)
 
 - Source: `microsoft/OmniParser-v2.0` on Hugging Face
-- Revision: `6600256cb0f1b07651e3bc86166196307bad7e2d`
-- Immutable source URL: `https://huggingface.co/microsoft/OmniParser-v2.0/resolve/6600256cb0f1b07651e3bc86166196307bad7e2d/icon_detect/model.pt`
-- Source file: `icon_detect/model.pt`
-- Source SHA-256: `dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57`
-- License recorded for this source model and converted detector artifact:
-  AGPL-3.0-only
-- Converted file: `omniparser-icon-detect-1280-opset17.onnx`
-- Converted SHA-256: `d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2`
-- Converted size: 80,933,219 bytes
-- Input: `images`, float32 `[1,3,1280,1280]`
-- Output: `output0`, float32 `[1,5,33600]`, YOLOv8-style `cx,cy,w,h,class_score`
+- Revision: `f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4`
+- Immutable source URL: `https://huggingface.co/microsoft/OmniParser-v2.0/resolve/f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4/icon_detect_v3/model.pt`
+- Source file: `icon_detect_v3/model.pt` (self-contained TorchScript, YOLOv9-E)
+- Source SHA-256: `11c6cbb77f22569fab22d86c76407a83ec81ab89dbfe28279854822d6e3fb00c`
+  (equal to the Hugging Face `X-Linked-ETag` at that revision)
+- Source size: 281,182,680 bytes
+- License: MIT, from `icon_detect_v3/LICENSE` at the same revision
+  (SHA-256 `646f8936b8ddcd14e13e578ff6857e368780b0d1a4f6066bee89211923a373e2`)
+- Converted file: `omniparser-icon-detect-v3-1280-opset17.onnx`
+- Converted SHA-256: `67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb`
+- Converted size: 232,728,858 bytes
+- Input: `images`, float32 `[1,3,1280,1280]`, RGB, `1/255`, 114 letterbox
+- Output: `detections`, float32 `[1,33600,6]`, rows of
+  `x1,y1,x2,y2,score,class` in letterboxed input pixels (`xyxy_score_class`)
 
-The reviewed conversion used Python 3.12.13, PyTorch 2.8.0, torchvision
-0.23.0, ultralytics 8.3.199, ONNX 1.19.0, ONNX Runtime 1.22.1, opset 17,
-fixed 1280 input, graph simplification enabled, and model-side NMS disabled.
-This records conversion provenance; the Rust worker itself has no Python
-runtime dependency. The converted file is an explicitly supplied release
-input because the reviewed byte-for-byte export is not published at the
-upstream source URL. The assembler rejects any substitute digest.
+`export_icon_detect_v3.py` is the executable conversion. It loads the
+TorchScript module, adds the model card's decoding (sigmoid class logits and
+left/top/right/bottom distances from each grid-cell center at strides 8, 16
+and 32), and exports opset 17 with the legacy TorchScript exporter. Python
+3.12, PyTorch 2.8.0 and ONNX 1.19.0 reproduce the digest above byte for byte.
+The worker keeps its existing letterbox, threshold, NMS and restore code;
+Microsoft's own pipeline decoder (`util/yolov9.py`) uses the same centered
+114 letterbox and RGB `1/255` input.
 
-Every assembled review bundle also contains the exact `model.pt`, pinned source
-snapshots for Ultralytics, PyTorch, torchvision, and ONNX, and the executable
-command in `export_omniparser_detector.py`. `conversion-recipe.json` is the
-machine-readable authority for parameters and expected output. No local patch
-was applied. These principal sources do not include every transitive build or
-host dependency, so successful reproduction must still match the recorded
-ONNX digest and does not by itself complete the pending license review.
+Parity against that decoder on `tests/quality-corpus`: decoded boxes differ by
+at most 0.03 px on the 1280 canvas and scores by at most 2e-6. After the
+worker's postprocess, every non-degenerate Microsoft detection is matched at
+IoU > 0.7; the only boxes the worker drops are zero-height boxes clamped out
+of the letterbox padding, which `valid()` rejects by design.
+
+The upstream model card recommends a 0.05 confidence threshold because the
+detector is deliberately low-confidence on small controls, so the manifest
+uses 0.05 and callers raise it per parse with `min_confidence`.
 
 ## PP-OCRv5 detector
 
@@ -65,8 +71,9 @@ ONNX digest and does not by itself complete the pending license review.
 ## Packaging checklist
 
 1. Obtain each artifact from its pinned source revision and verify SHA-256.
-2. Convert OmniParser with the recorded toolchain and compare the converted
-   SHA-256; a different conversion must receive a new ledger entry.
+2. Convert `icon_detect_v3` with `export_icon_detect_v3.py` and the recorded
+   toolchain and compare the converted SHA-256; a different conversion must
+   receive a new ledger entry.
 3. Package a CPU-only ONNX Runtime dynamic library and record its exact version
    and SHA-256 in the copied manifest. Set `intra_threads` to the bounded CPU
    concurrency selected for that package and target.
@@ -90,5 +97,8 @@ extracts exactly one target member, and verifies its digest:
 - Linux x64 archive `1254da24fb389cf39dc0ff3451ab48301740ffbfcbaf646849df92f80ee92c57`; `libonnxruntime.so` `5bd5bedf736fc501692435d0ec4f6e8b2bdf48cd30af8e6d00d61b3ddc9a7ab8`
 
 `scripts/artifacts.lock.json` is the machine-readable authority for URLs,
-archive members, sizes, target identities, and hashes. `SOURCE_OFFER.md` and
-`THIRD_PARTY_NOTICES.md` must accompany every assembled bundle.
+archive members, sizes, target identities, and hashes. `THIRD_PARTY_NOTICES.md`
+and the `licenses/` texts must accompany every assembled bundle. The lock's
+`prohibited_artifacts` list names the retired AGPL detector, its conversion,
+and the Ultralytics source bundled for it; bundle verification rejects any
+file or archive member with those digests.

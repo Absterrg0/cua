@@ -14,23 +14,18 @@
     "libs/cua-driver/rust/Cargo.toml",
     "libs/cua-driver/rust/crates/cua-perception"
   ],
-  "source_offer": "SOURCE_OFFER.md",
-  "bundled_upstream_sources": [
+  "bundled_upstream_sources": [],
+  "immutable_external_coordinates": [
     {
-      "component": "OmniParser icon detector source",
-      "path": "source/upstream/omniparser-icon-detect-model.pt",
-      "url": "https://huggingface.co/microsoft/OmniParser-v2.0/resolve/6600256cb0f1b07651e3bc86166196307bad7e2d/icon_detect/model.pt",
-      "sha256": "dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57"
+      "component": "OmniParser icon_detect_v3 source (MIT, not bundled)",
+      "url": "https://huggingface.co/microsoft/OmniParser-v2.0/resolve/f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4/icon_detect_v3/model.pt",
+      "sha256": "11c6cbb77f22569fab22d86c76407a83ec81ab89dbfe28279854822d6e3fb00c"
     },
     {
-      "component": "Pinned exporter sources",
-      "path": "source/exporter/",
+      "component": "ONNX Runtime and redistributed OCR inputs",
       "url": "See scripts/artifacts.lock.json",
       "sha256": "See scripts/artifacts.lock.json"
     }
   ],
-  "immutable_external_coordinates": [
-    { "component": "ONNX Runtime and redistributed OCR inputs", "url": "See scripts/artifacts.lock.json", "sha256": "See scripts/artifacts.lock.json" }
-  ],
-  "review_status": "maintainer-approved-agpl-distribution"
+  "review_status": "permissive-distribution"
 }
