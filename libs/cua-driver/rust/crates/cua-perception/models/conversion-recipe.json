@@ -30,8 +30,11 @@
   },
   "toolchain": {
     "python": "3.12",
-    "torch": "2.8.0",
+    "requirements": "models/export-requirements.txt",
+    "torch": "2.8.0+cpu",
     "onnx": "1.19.0",
+    "numpy": "2.5.2",
+    "protobuf": "7.36.2",
     "onnxruntime_validation": "1.22.1"
   },
   "patches": [],

@@ -1,0 +1,17 @@
+# Exact conversion environment for export_icon_detect_v3.py. The exported ONNX
+# is byte-for-byte reproducible only with these versions on Python 3.12.
+--extra-index-url https://download.pytorch.org/whl/cpu
+filelock==3.32.3
+fsspec==2026.7.0
+jinja2==3.1.6
+markupsafe==3.0.3
+ml-dtypes==0.6.0
+mpmath==1.3.0
+networkx==3.6.1
+numpy==2.5.2
+onnx==1.19.0
+protobuf==7.36.2
+setuptools==78.1.0
+sympy==1.14.0
+torch==2.8.0+cpu
+typing-extensions==4.16.0
