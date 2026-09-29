@@ -3077,6 +3077,10 @@
             },
             "required": [],
             "type": "object"
+          },
+          "session": {
+            "description": "Public session label of the observation that produced capture_id. A capture never resolves in another session.",
+            "type": "string"
           }
         },
         "required": [

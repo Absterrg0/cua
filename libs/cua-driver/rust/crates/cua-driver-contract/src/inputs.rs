@@ -28,7 +28,7 @@ pub trait ToolInput: Serialize + DeserializeOwned + JsonSchema {
     }
 }
 
-fn normalize_schema(value: &mut Value) {
+pub(crate) fn normalize_schema(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.remove("title");

@@ -99,9 +99,9 @@ def test_reviewed_model_broker_is_read_only_pinned_and_immutable() -> None:
         '[[ "$(jq -r .workflow_run.head_sha <<<"$artifact_json")" == "$REVIEWED_SOURCE_SHA" ]]'
         in broker_text
     )
-    assert "omniparser-icon-detect-1280-opset17.onnx" in broker_text
-    assert "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2" in broker_text
-    assert "80_933_219" in broker_text
+    assert "omniparser-icon-detect-v3-1280-opset17.onnx" in broker_text
+    assert "67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb" in broker_text
+    assert "232_728_858" in broker_text
     producer_download = next(
         step
         for step in broker["steps"]
@@ -139,8 +139,8 @@ def test_review_pipeline_binds_current_pr_head_and_authenticated_supplied_model(
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     detector = next(item for item in lock["artifacts"] if item["role"] == "icon-detect")
     assert detector["url"] is None
-    assert detector["size"] == 80_933_219
-    assert detector["sha256"] == "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2"
+    assert detector["size"] == 232_728_858
+    assert detector["sha256"] == "67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb"
     assert "digest != expected_sha256" in text
     assert "refs/pull/$REQUESTED_PR_NUMBER/head" in text
     assert "pulls/$REQUESTED_PR_NUMBER" in text

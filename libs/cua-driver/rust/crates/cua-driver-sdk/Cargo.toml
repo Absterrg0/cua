@@ -15,6 +15,7 @@ crate-type = ["rlib", "cdylib"]
 async-trait = "0.1"
 cua-driver-contract = { path = "../cua-driver-contract" }
 cua-driver-core = { path = "../cua-driver-core", default-features = false }
+cua-driver-extensions = { path = "../cua-driver-extensions" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

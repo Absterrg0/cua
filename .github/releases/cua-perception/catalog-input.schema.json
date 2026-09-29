@@ -38,10 +38,13 @@
       "minimum": 1
     },
     "publisher_id": {
-      "const": "cua"
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$"
     },
     "publisher_name": {
-      "const": "Cua"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
     },
     "key_id": {
       "type": "string",

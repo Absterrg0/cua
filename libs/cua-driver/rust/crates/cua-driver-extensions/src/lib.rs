@@ -5,6 +5,8 @@
 //! hashes before activation. An explicitly marked developer mode accepts a
 //! local unsigned archive, but records and reports that weaker trust class.
 
+pub mod install_identity;
+
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -66,22 +68,20 @@ const MAX_ARCHIVE_PATH_BYTES: usize = 512;
 const DEVELOPER_TRUST_NOTICE: &str = "developer-only unsigned local install; it is not publisher-verified and cannot be represented as verified";
 #[cfg(feature = "review-trust-root")]
 const REVIEW_TRUST_NOTICE: &str = "REVIEW ONLY: locally overridden trust root; never production, release, or publishable evidence";
+// The production publisher root is fixed at build time; see build.rs.
+include!(concat!(env!("OUT_DIR"), "/publisher_root.rs"));
 #[cfg_attr(feature = "review-trust-root", allow(dead_code))]
-const VERIFIED_PUBLISHER_ID: &str = "cua";
+const VERIFIED_PUBLISHER_ID: &str = BUILD_PUBLISHER_ID;
 #[cfg_attr(feature = "review-trust-root", allow(dead_code))]
-const VERIFIED_PUBLISHER_NAME: &str = "Cua";
+const VERIFIED_PUBLISHER_NAME: &str = BUILD_PUBLISHER_NAME;
 #[cfg(not(feature = "review-trust-root"))]
-const VERIFIED_KEY_ID: &str = "cua-extension-ed25519-2026-09";
-// The corresponding private key is held outside this repository.
+const VERIFIED_KEY_ID: &str = BUILD_KEY_ID;
 #[cfg(not(feature = "review-trust-root"))]
-const VERIFIED_KEY_VALID_FROM_UNIX: u64 = 1_790_208_000; // 2026-09-24
+const VERIFIED_KEY_VALID_FROM_UNIX: u64 = BUILD_KEY_VALID_FROM_UNIX;
 #[cfg(not(feature = "review-trust-root"))]
-const VERIFIED_KEY_VALID_UNTIL_UNIX: u64 = 2_082_758_400; // 2036-01-01
+const VERIFIED_KEY_VALID_UNTIL_UNIX: u64 = BUILD_KEY_VALID_UNTIL_UNIX;
 #[cfg(any(not(feature = "review-trust-root"), test))]
-const VERIFIED_PUBLIC_KEY: [u8; 32] = [
-    0xe9, 0x2d, 0xf5, 0x3e, 0x93, 0x1b, 0x89, 0xe6, 0x86, 0x8a, 0xba, 0x65, 0xe6, 0xbd, 0xec, 0x35,
-    0x19, 0x6c, 0x57, 0x5b, 0x9f, 0x38, 0xfc, 0xb0, 0xe8, 0x8b, 0x74, 0xa3, 0x19, 0x8d, 0x92, 0x8a,
-];
+const VERIFIED_PUBLIC_KEY: [u8; 32] = BUILD_PUBLIC_KEY;
 #[cfg(feature = "review-trust-root")]
 const REVIEW_PUBLISHER_ID: &str = "cua-review-only";
 #[cfg(feature = "review-trust-root")]
@@ -423,6 +423,10 @@ struct InstallReview {
     ran: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     installed_version: Option<String>,
+    /// Digest of the verified artifact identity this plan would install. A
+    /// confirming call must echo it, so confirmation authorizes exactly the
+    /// previewed artifact and nothing that replaced the catalog since.
+    plan_sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -626,8 +630,60 @@ pub fn run(args: &[String]) {
     }
 }
 
-pub(crate) fn register_host_tools(registry: &mut ToolRegistry) {
+pub fn register_host_tools(registry: &mut ToolRegistry) {
     registry.register(Box::new(InstallExtensionTool));
+    registry.register(Box::new(ExtensionStatusTool));
+}
+
+/// Read-only status of the installed perception extension, from the same
+/// store and verification the resolver uses. It never runs the worker.
+struct ExtensionStatusTool;
+static EXTENSION_STATUS_DEF: OnceLock<ToolDef> = OnceLock::new();
+
+#[async_trait::async_trait]
+impl Tool for ExtensionStatusTool {
+    fn def(&self) -> &ToolDef {
+        EXTENSION_STATUS_DEF.get_or_init(|| ToolDef {
+            name: "extension_status".to_owned(),
+            description: "Report whether a Driver-managed optional extension is installed, its active version, health, trust class, and publisher, without running it.".to_owned(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "enum": ["perception"]}
+                },
+                "required": ["name"],
+                "additionalProperties": false
+            }),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: false,
+        })
+    }
+
+    async fn invoke(&self, args: serde_json::Value) -> ToolResult {
+        if args.get("name").and_then(serde_json::Value::as_str) != Some("perception") {
+            return ToolResult::error("extension_status requires name=\"perception\"");
+        }
+        let status = tokio::task::spawn_blocking(|| -> Result<serde_json::Value> {
+            let entry = registry_entry("perception")?;
+            let store = ExtensionStore::new(extension_root()?);
+            Ok(serde_json::to_value(store.info(entry, false)?)?)
+        })
+        .await;
+        match status {
+            Ok(Ok(structured)) => {
+                let detail = structured
+                    .get("detail")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("status unavailable")
+                    .to_owned();
+                ToolResult::text(detail).with_structured(structured)
+            }
+            Ok(Err(error)) => ToolResult::error(format!("extension_status failed: {error:#}")),
+            Err(error) => ToolResult::error(format!("extension_status task failed: {error}")),
+        }
+    }
 }
 
 struct InstallExtensionTool;
@@ -638,12 +694,13 @@ impl Tool for InstallExtensionTool {
     fn def(&self) -> &ToolDef {
         INSTALL_EXTENSION_DEF.get_or_init(|| ToolDef {
             name: "install_extension".to_owned(),
-            description: "Preview or install one Driver-managed optional extension. The first call without confirm returns the exact signed artifact, destination, license, source, and trust plan without mutation. Re-call with confirm=true to perform that exact verified installation.".to_owned(),
+            description: "Preview, install, or update one Driver-managed optional extension. The first call without confirm returns the exact signed artifact, destination, license, source, and trust plan plus its plan_sha256, without mutation. Re-call with confirm=true and that plan_sha256 to perform exactly that verified installation; a different installed version is updated, the same version is left in place.".to_owned(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "enum": ["perception"]},
-                    "confirm": {"type": "boolean", "description": "Install the previewed extension. Omit or false for a read-only plan."}
+                    "confirm": {"type": "boolean", "description": "Install the previewed extension. Omit or false for a read-only plan."},
+                    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The plan_sha256 returned by the preview. Required with confirm=true."}
                 },
                 "required": ["name"],
                 "additionalProperties": false
@@ -660,7 +717,16 @@ impl Tool for InstallExtensionTool {
         if args.get("name").and_then(serde_json::Value::as_str) != Some("perception") {
             return ToolResult::error("install_extension requires name=\"perception\"");
         }
-        match tokio::task::spawn_blocking(move || install_extension_from_mcp(confirmed)).await {
+        let plan = args
+            .get("plan_sha256")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        if confirmed && plan.is_none() {
+            return ToolResult::error(
+                "install_extension confirm=true requires the plan_sha256 returned by the preview",
+            );
+        }
+        match tokio::task::spawn_blocking(move || install_extension_from_mcp(confirmed, plan)).await {
             Ok(Ok((message, structured))) => ToolResult::text(message).with_structured(structured),
             Ok(Err(error)) => ToolResult::error(format!("install_extension failed: {error:#}")),
             Err(error) => ToolResult::error(format!("install_extension task failed: {error}")),
@@ -668,7 +734,10 @@ impl Tool for InstallExtensionTool {
     }
 }
 
-fn install_extension_from_mcp(confirmed: bool) -> Result<(String, serde_json::Value)> {
+fn install_extension_from_mcp(
+    confirmed: bool,
+    confirmed_plan: Option<String>,
+) -> Result<(String, serde_json::Value)> {
     let catalog = std::env::var_os("CUA_DRIVER_PERCEPTION_CATALOG")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
@@ -699,17 +768,33 @@ fn install_extension_from_mcp(confirmed: bool) -> Result<(String, serde_json::Va
             serde_json::to_value(review)?,
         ));
     }
-    if store.active_path(entry.id)?.is_some() {
-        bail!("perception is already installed; use the CLI extension update command with a reviewed catalog");
+    // The catalog was reread and fully reverified above; the confirmation only
+    // authorizes the artifact the caller previewed.
+    if confirmed_plan.as_deref() != Some(review.plan_sha256.as_str()) {
+        bail!("the verified plan changed since the preview; preview again before confirming");
     }
-    let installed = store.install_source(entry, &source, false)?;
+    let active_version = store.info(entry, false)?.active_version;
+    if active_version.as_deref() == Some(inspected.manifest.version.as_str()) {
+        review.installed = true;
+        review.installed_version = active_version;
+        return Ok((
+            "Perception extension is already installed at the previewed version.".to_owned(),
+            serde_json::to_value(review)?,
+        ));
+    }
+    let update = active_version.is_some();
+    let installed = store.install_source(entry, &source, update)?;
     review.authorization.mutation_performed = true;
     review.mutation_performed = true;
     review.installed = true;
     review.ran = true;
     review.installed_version = Some(installed.version);
     Ok((
-        "Perception extension installed from the verified plan.".to_owned(),
+        if update {
+            "Perception extension updated from the verified plan.".to_owned()
+        } else {
+            "Perception extension installed from the verified plan.".to_owned()
+        },
         serde_json::to_value(review)?,
     ))
 }
@@ -810,7 +895,37 @@ fn install_review(
         installed: false,
         ran: false,
         installed_version: None,
+        plan_sha256: plan_digest(
+            entry,
+            &manifest.version,
+            &manifest.target,
+            &inspected.archive_sha256,
+            &hex_sha256(&inspected.manifest_bytes),
+            catalog.map(|catalog| catalog.catalog_version),
+            catalog.map(|catalog| catalog.key_id.as_str()),
+        ),
     }
+}
+
+fn plan_digest(
+    entry: &RegistryEntry,
+    version: &str,
+    target: &str,
+    archive_sha256: &str,
+    manifest_sha256: &str,
+    catalog_version: Option<u64>,
+    key_id: Option<&str>,
+) -> String {
+    let identity = serde_json::json!({
+        "id": entry.id,
+        "version": version,
+        "target": target,
+        "archive_sha256": archive_sha256,
+        "manifest_sha256": manifest_sha256,
+        "catalog_version": catalog_version,
+        "key_id": key_id,
+    });
+    hex_sha256(identity.to_string().as_bytes())
 }
 
 fn run_inner(args: &[String]) -> Result<()> {
@@ -1051,7 +1166,7 @@ fn extension_root() -> Result<PathBuf> {
     #[cfg(not(windows))]
     let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME not set"))?;
     Ok(PathBuf::from(home)
-        .join(crate::bundle::user_home_subdirectory())
+        .join(crate::install_identity::user_home_subdirectory())
         .join("extensions"))
 }
 
@@ -1074,7 +1189,7 @@ fn perception_client_in(store: &ExtensionStore) -> PerceptionClient {
 /// Resolver a running Driver consults before every `parse_visual_regions`
 /// request. It fingerprints the installation cheaply and re-runs the full
 /// startup verification only when install, update, or removal changed it.
-pub(crate) fn perception_client_resolver() -> std::sync::Arc<dyn PerceptionClientResolver> {
+pub fn perception_client_resolver() -> std::sync::Arc<dyn PerceptionClientResolver> {
     std::sync::Arc::new(InstalledPerceptionResolver { root: None })
 }
 
@@ -1171,7 +1286,7 @@ fn perception_install_fingerprint(store: &ExtensionStore) -> String {
     parts.join("|")
 }
 
-pub(crate) fn perception_client_for_cli() -> Result<PerceptionClient> {
+pub fn perception_client_for_cli() -> Result<PerceptionClient> {
     match perception_worker_config()? {
         Some(config) => PerceptionClient::new(config).map_err(|error| {
             anyhow!(serde_json::to_string(&error).unwrap_or_else(|_| error.message.clone()))
@@ -7281,7 +7396,7 @@ mod tests {
         std::env::set_var("CUA_DRIVER_RS_HOME", &home);
         std::env::set_var("CUA_DRIVER_PERCEPTION_CATALOG", &catalog);
 
-        let (_, plan) = install_extension_from_mcp(false).unwrap();
+        let (_, plan) = install_extension_from_mcp(false, None).unwrap();
         assert_eq!(plan["extension"], "perception");
         assert_eq!(plan["artifact"], "cua-perception 1.0.0");
         assert_eq!(plan["target"], current_target().unwrap());
@@ -7322,7 +7437,17 @@ mod tests {
         assert_eq!(plan["ran"], false);
         assert!(!home.join("extensions/cua-perception").exists());
 
-        let (_, installed) = install_extension_from_mcp(true).unwrap();
+        let plan_sha256 = plan["plan_sha256"].as_str().unwrap().to_owned();
+        assert_eq!(plan_sha256.len(), 64);
+        // A confirmation must name the exact previewed plan.
+        let stale = install_extension_from_mcp(true, Some("0".repeat(64))).unwrap_err();
+        assert!(
+            stale.to_string().contains("the verified plan changed since the preview"),
+            "{stale:#}"
+        );
+        assert!(!home.join("extensions/cua-perception").exists());
+
+        let (_, installed) = install_extension_from_mcp(true, Some(plan_sha256.clone())).unwrap();
         assert_eq!(installed["ran"], true);
         assert_eq!(installed["installed"], true);
         assert_eq!(installed["installed_version"], "1.0.0");
@@ -7332,8 +7457,42 @@ mod tests {
         assert_eq!(installed["mutation_performed"], true);
         assert!(home.join("extensions/cua-perception/active.json").is_file());
 
+        // Confirming the same plan again leaves the active install in place.
+        let (message, again) = install_extension_from_mcp(true, Some(plan_sha256)).unwrap();
+        assert_eq!(message, "Perception extension is already installed at the previewed version.");
+        assert_eq!(again["mutation_performed"], false);
+        assert_eq!(again["installed_version"], "1.0.0");
+
         std::env::remove_var("CUA_DRIVER_PERCEPTION_CATALOG");
         std::env::remove_var("CUA_DRIVER_RS_HOME");
+    }
+
+    #[tokio::test]
+    async fn install_confirmation_without_a_plan_digest_is_refused_before_any_io() {
+        let result = InstallExtensionTool
+            .invoke(serde_json::json!({"name": "perception", "confirm": true}))
+            .await;
+        assert_eq!(result.is_error, Some(true));
+        assert!(serde_json::to_string(&result.content)
+            .unwrap()
+            .contains("requires the plan_sha256 returned by the preview"));
+    }
+
+    #[test]
+    fn host_tools_include_the_read_only_extension_status() {
+        let mut registry = ToolRegistry::new();
+        register_host_tools(&mut registry);
+        let tools = registry.tools_list()["tools"].as_array().unwrap().clone();
+        let status = tools
+            .iter()
+            .find(|tool| tool["name"] == "extension_status")
+            .expect("extension_status registered");
+        assert_eq!(status["annotations"]["readOnlyHint"], true);
+        let install = tools
+            .iter()
+            .find(|tool| tool["name"] == "install_extension")
+            .expect("install_extension registered");
+        assert!(install["inputSchema"]["properties"]["plan_sha256"].is_object());
     }
 
     fn test_catalog_payload(key_id: &str, version: u64) -> CatalogPayload {

@@ -19,7 +19,8 @@
       "const": 1
     },
     "publisherId": {
-      "const": "cua"
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$"
     },
     "activeKeyId": {
       "type": "string",
@@ -55,6 +56,15 @@
           "const": false
         }
       }
+    },
+    "publisherName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "sourceRepository": {
+      "type": "string",
+      "pattern": "^https://"
     }
   },
   "$defs": {

@@ -1,0 +1,42 @@
+[package]
+name = "cua-driver-extensions"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Verified install, activation, and resolution of optional Cua Driver extensions"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = "0.1"
+base64 = { workspace = true }
+cap-fs-ext = "4.0.3"
+cap-std = "4.0.3"
+cua-driver-core = { path = "../cua-driver-core" }
+flate2 = "1"
+fs2 = { workspace = true }
+ring = "0.17"
+semver = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tar = { version = "0.4", default-features = false }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", features = ["fs", "process"] }
+
+[dev-dependencies]
+cua-driver-contract = { path = "../cua-driver-contract" }
+tempfile = "3"
+tokio = { workspace = true, features = ["full"] }
+
+[features]
+default = []
+# Local review builds may replace the production extension trust root with an
+# explicitly supplied Ed25519 public key. The build script rejects release
+# profiles and missing/invalid overrides; ordinary artifacts never enable it.
+review-trust-root = []

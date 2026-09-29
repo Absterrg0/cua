@@ -5,35 +5,15 @@
 //! entry point (MCP proxy, daemon, status, autostart) in the same namespace
 //! without a mutable "active version" switch.
 
-use std::path::Path;
-
 pub const RELEASE_CLI_NAME: &str = "cua-driver";
-pub const LOCAL_CLI_NAME: &str = "cua-driver-local";
+pub use cua_driver_extensions::install_identity::LOCAL_CLI_NAME;
 
 pub const RELEASE_APP_NAME: &str = "CuaDriver";
 pub const LOCAL_APP_NAME: &str = "CuaDriverLocal";
 pub const RELEASE_BUNDLE_ID: &str = "com.trycua.driver";
 pub const LOCAL_BUNDLE_ID: &str = "com.trycua.driver.local";
 
-pub(crate) fn path_is_local(path: &Path) -> bool {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    file_name == LOCAL_CLI_NAME
-        || file_name == format!("{LOCAL_CLI_NAME}.exe")
-        || path
-            .components()
-            .any(|component| component.as_os_str().to_str() == Some("CuaDriverLocal.app"))
-}
-
-/// Whether this process is the explicitly-installed source-build product.
-pub fn is_local_installation() -> bool {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| std::fs::canonicalize(path).ok())
-        .is_some_and(|path| path_is_local(&path))
-}
+pub use cua_driver_extensions::install_identity::is_local_installation;
 
 pub fn cli_name() -> &'static str {
     if is_local_installation() {
@@ -51,13 +31,7 @@ pub fn state_namespace() -> &'static str {
     }
 }
 
-pub fn user_home_subdirectory() -> &'static str {
-    if is_local_installation() {
-        ".cua-driver-local"
-    } else {
-        ".cua-driver"
-    }
-}
+pub use cua_driver_extensions::install_identity::user_home_subdirectory;
 
 #[cfg(target_os = "windows")]
 pub fn uia_executable_name() -> &'static str {
@@ -128,20 +102,6 @@ pub fn is_env_truthy(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn local_identity_requires_the_explicit_local_product_name() {
-        assert!(path_is_local(Path::new(
-            "/Applications/CuaDriverLocal.app/Contents/MacOS/cua-driver-local"
-        )));
-        assert!(path_is_local(Path::new(
-            "/dev/.cua-driver-local/cua-driver-local.exe"
-        )));
-        assert!(!path_is_local(Path::new(
-            "/Applications/CuaDriver.app/Contents/MacOS/cua-driver"
-        )));
-        assert!(!path_is_local(Path::new("/tmp/cua-driver-local-test")));
-    }
 
     #[cfg(target_os = "windows")]
     #[test]

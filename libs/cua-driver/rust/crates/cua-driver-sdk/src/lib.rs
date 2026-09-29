@@ -57,10 +57,12 @@ static PERCEPTION_CLIENT_RESOLVER: OnceLock<
     Arc<dyn cua_driver_core::perception_client::PerceptionClientResolver>,
 > = OnceLock::new();
 
-/// Configure the binary-owned resolver for optional installed perception.
-/// Every runtime consults it per `parse_visual_regions` request, so extension
-/// install, update, and removal take effect on a running Driver. Language SDKs
-/// without a binary host retain the typed unavailable tool.
+/// Override the resolver for optional installed perception. Every runtime
+/// consults it per `parse_visual_regions` request, so extension install,
+/// update, and removal take effect on a running Driver. Without an override,
+/// every host, including language SDKs embedding the runtime in-process,
+/// resolves the extension installed and verified in the Driver extension
+/// store.
 #[doc(hidden)]
 pub fn configure_perception_client_resolver(
     resolver: Arc<dyn cua_driver_core::perception_client::PerceptionClientResolver>,
@@ -71,10 +73,10 @@ pub fn configure_perception_client_resolver(
 pub(crate) fn configured_perception_client(
 ) -> cua_driver_core::perception_client::PerceptionClientHandle {
     use cua_driver_core::perception_client::{PerceptionClient, PerceptionClientHandle};
-    PERCEPTION_CLIENT_RESOLVER.get().map_or_else(
-        || PerceptionClientHandle::fixed(PerceptionClient::unavailable()),
-        |resolver| PerceptionClientHandle::live(resolver.clone()),
-    )
+    let resolver = PERCEPTION_CLIENT_RESOLVER
+        .get_or_init(cua_driver_extensions::perception_client_resolver)
+        .clone();
+    PerceptionClientHandle::live(resolver)
 }
 
 fn host_sessions_json_for_prefix(runtime_prefix: &str) -> Value {

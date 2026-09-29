@@ -204,6 +204,23 @@ impl ToolInput for ParseVisualRegionsInput {
     fn validate(&self) -> Result<(), String> {
         ParseVisualRegionsInput::validate(self).map_err(|error| error.to_string())
     }
+
+    /// A capture resolves only inside the session whose observation produced
+    /// it, and the runtime selects that binding from the `session` label. The
+    /// label is transport metadata rather than a record field, so it is
+    /// advertised here for callers that forward labels by schema.
+    fn input_schema() -> serde_json::Value {
+        let schema = crate::schema_settings()
+            .into_generator()
+            .into_root_schema_for::<Self>();
+        let mut value = serde_json::to_value(schema).expect("tool input schema serializes");
+        crate::inputs::normalize_schema(&mut value);
+        value["properties"]["session"] = serde_json::json!({
+            "type": "string",
+            "description": "Public session label of the observation that produced capture_id. A capture never resolves in another session."
+        });
+        value
+    }
 }
 
 #[derive(

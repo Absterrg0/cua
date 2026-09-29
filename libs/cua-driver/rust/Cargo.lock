@@ -1214,6 +1214,7 @@ dependencies = [
  "cap-std",
  "cua-driver-contract",
  "cua-driver-core",
+ "cua-driver-extensions",
  "cua-driver-sdk",
  "cua-driver-testkit",
  "cursor-overlay",
@@ -1331,6 +1332,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "cua-driver-extensions"
+version = "0.30.4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "cap-fs-ext",
+ "cap-std",
+ "cua-driver-contract",
+ "cua-driver-core",
+ "flate2",
+ "fs2",
+ "ring",
+ "rustix",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "cua-driver-sdk"
 version = "0.30.4"
 dependencies = [
@@ -1338,6 +1364,7 @@ dependencies = [
  "core-foundation",
  "cua-driver-contract",
  "cua-driver-core",
+ "cua-driver-extensions",
  "cursor-overlay",
  "oo7",
  "platform-linux",

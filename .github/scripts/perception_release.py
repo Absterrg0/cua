@@ -581,7 +581,11 @@ def generated_documents(
     return sbom, provenance
 
 
-def extension_manifest(stage: Path, manifest: Mapping[str, Any], payload_root: Path) -> dict[str, Any]:
+def extension_manifest(
+    stage: Path, manifest: Mapping[str, Any], payload_root: Path,
+    trust: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    trust = trust or {}
     model_ledger = read_json(confined_file(payload_root, manifest["modelLedger"]))
     model_entries = {item["artifact"]: item for item in model_ledger["models"]}
     artifacts = manifest["artifacts"]
@@ -647,7 +651,7 @@ def extension_manifest(stage: Path, manifest: Mapping[str, Any], payload_root: P
             "sha256": source["sha256"],
         },
         "license": "LicenseRef-Mixed",
-        "source": "https://github.com/trycua/cua",
+        "source": trust.get("sourceRepository", "https://github.com/trycua/cua"),
         "corresponding_source_uri": f"source/{source['name']}",
         "corresponding_source_revision": manifest["sourceSha"],
         "provenance": "metadata/provenance.redacted.json",
@@ -752,14 +756,22 @@ def corresponding_source_artifact(manifest: Mapping[str, Any]) -> Mapping[str, A
 def catalog_payload(
     manifest: Mapping[str, Any], archive: Path, manifest_file: Path, key_id: str,
     catalog_version: int, expires_unix: int, next_key: Any,
+    trust: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build the signed catalog payload for the trust root's publisher.
+
+    Cua's own trust root yields publisher `cua`/`Cua` and the trycua source.
+    A downstream distribution passes its own trust root, whose publisher must
+    match the root its Driver build embeds.
+    """
     source = corresponding_source_artifact(manifest)
+    trust = trust or {}
     return {
         "schema_version": 1,
         "catalog_version": catalog_version,
         "expires_unix": expires_unix,
-        "publisher_id": "cua",
-        "publisher_name": "Cua",
+        "publisher_id": trust.get("publisherId", "cua"),
+        "publisher_name": trust.get("publisherName", "Cua"),
         "key_id": key_id,
         "extension_id": "cua-perception",
         "version": manifest["version"],
@@ -769,7 +781,7 @@ def catalog_payload(
         "archive_sha256": file_digest(archive),
         "manifest_sha256": file_digest(manifest_file),
         "license": "LicenseRef-Mixed",
-        "source": "https://github.com/trycua/cua",
+        "source": trust.get("sourceRepository", "https://github.com/trycua/cua"),
         "corresponding_source_uri": f"source/{source['name']}",
         "corresponding_source_revision": manifest["sourceSha"],
         "provenance": "metadata/provenance.redacted.json",
@@ -834,8 +846,10 @@ def package_candidate(
     key_id: str = "cua-extension-ed25519-2026-09",
     catalog_version: int = 1,
     expires_unix: int = 2000000000,
+    trust_root_path: Path | None = None,
 ) -> Path:
-    trust = read_json(CONTROL / "trust-root.json")
+    trust = read_json(trust_root_path or CONTROL / "trust-root.json")
+    validate_schema(trust, CONTROL / "trust-root.schema.json")
     if key_id != trust.get("activeKeyId"):
         raise CandidateError(f"catalog key id is not the active trust root: {key_id}")
     active_keys = [
@@ -898,7 +912,7 @@ def package_candidate(
         validate_schema(sbom, CONTROL / "sbom.schema.json")
         validate_schema(provenance, CONTROL / "provenance.schema.json")
         validate_schema(runtime, CONTROL / "runtime-contract.schema.json")
-        extension = extension_manifest(stage, manifest, payload_root)
+        extension = extension_manifest(stage, manifest, payload_root, trust)
         validate_extension_manifest_bindings(extension)
         canonical_json(stage / "extension.json", extension)
 
@@ -908,7 +922,7 @@ def package_candidate(
         create_archive(stage, archive)
         payload = catalog_payload(
             manifest, archive, stage / "extension.json", key_id, catalog_version, expires_unix,
-            next_key,
+            next_key, trust,
         )
         validate_schema(payload, CONTROL / "catalog-input.schema.json")
         (output / "catalog-payload.json").write_text(
@@ -1089,6 +1103,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     package.add_argument("--key-id", required=True)
     package.add_argument("--catalog-version", type=int, required=True)
     package.add_argument("--expires-unix", type=int, required=True)
+    package.add_argument(
+        "--trust-root", type=Path,
+        help="downstream publisher trust root; defaults to the Cua trust root in the control directory",
+    )
     driver = subparsers.add_parser("verify-driver-exclusion")
     driver.add_argument("archives", nargs="+", type=Path)
     gates = subparsers.add_parser("run-gates")
@@ -1115,6 +1133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 key_id=args.key_id,
                 catalog_version=args.catalog_version,
                 expires_unix=args.expires_unix,
+                trust_root_path=args.trust_root,
             )
             print(archive)
         elif args.command == "verify-driver-exclusion":

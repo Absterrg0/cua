@@ -587,8 +587,12 @@ fn build_registry(options: &RuntimeOptions) -> ToolRegistry {
         ToolRegistry::new()
     };
 
-    if let Some(register_host_tools) = options.register_host_tools {
-        register_host_tools(&mut registry);
+    // An embedding host without its own administrative tools gets the same
+    // verified extension lifecycle the Driver binary registers, so optional
+    // extensions install and resolve identically in-process.
+    match options.register_host_tools {
+        Some(register_host_tools) => register_host_tools(&mut registry),
+        None => cua_driver_extensions::register_host_tools(&mut registry),
     }
     let perception_registered = registry.tools_list()["tools"]
         .as_array()

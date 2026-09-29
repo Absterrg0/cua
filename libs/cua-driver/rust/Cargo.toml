@@ -4,6 +4,7 @@ members = [
     "crates/cua-driver",
     "crates/cua-driver-contract",
     "crates/cua-driver-sdk",
+    "crates/cua-driver-extensions",
     "crates/cua-driver-bindgen",
     "crates/cua-driver-testkit",
     "crates/cua-driver-e2e",

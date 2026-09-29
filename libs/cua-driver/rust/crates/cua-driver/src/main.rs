@@ -24,7 +24,7 @@ mod check_update_tool;
 mod cli;
 mod doctor;
 mod driver_service_http;
-mod extension_manager;
+use cua_driver_extensions as extension_manager;
 mod history_runtime;
 mod mcp_envelope;
 mod mcp_http;
