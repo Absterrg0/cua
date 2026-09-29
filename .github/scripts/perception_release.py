@@ -611,7 +611,7 @@ def extension_manifest(
         if item["kind"] != "model":
             continue
         ledger = model_entries[item["name"]]
-        original = ledger.get("sourceArtifact", {}).get("sha256", item["sha256"])
+        original = (ledger.get("sourceArtifact") or ledger.get("upstreamSource") or {}).get("sha256", item["sha256"])
         models.append({
             "path": f"models/{item['name']}",
             "revision": ledger["revision"],

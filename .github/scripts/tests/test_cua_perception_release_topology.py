@@ -284,17 +284,18 @@ def test_templates_and_schemas_are_valid_and_pin_known_models() -> None:
     models = json.loads((CONTROL / "model-ledger.template.json").read_text())["models"]
     serialized = json.dumps(models)
     for expected in (
-        "6600256cb0f1b07651e3bc86166196307bad7e2d",
-        "dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57",
-        "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2",
+        "f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4",
+        "11c6cbb77f22569fab22d86c76407a83ec81ab89dbfe28279854822d6e3fb00c",
+        "67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb",
         "e6f4fa85f00e168c862bc462aebca69eef9b3d3d",
         "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d",
         "3fafbc3b5dcf93dd72add9f48368be8a3a2cd33b",
         "b5f833dfc5d0eb71da397b4efa06ebeee9b431b690a47d6af40d77d8eabc557f",
     ):
         assert expected in serialized
-    assert models[0]["license"] == "AGPL-3.0-only"
-    assert models[0]["verificationStatus"] == "release-verified"
+    assert models[0]["license"] == "MIT"
+    assert models[0]["verificationStatus"] == "conversion-verified"
+    assert "AGPL" not in serialized
     platforms = json.loads((CONTROL / "platform-inputs.json").read_text())
     platform_validator = Draft202012Validator(
         json.loads((CONTROL / "platform-inputs.schema.json").read_text())

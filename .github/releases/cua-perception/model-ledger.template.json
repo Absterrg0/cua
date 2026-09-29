@@ -3,22 +3,24 @@
   "schemaVersion": 1,
   "models": [
     {
-      "artifact": "omniparser-icon-detect-fixed-1280-opset17.onnx",
-      "artifactSha256": "d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2",
-      "artifactSize": 80933219,
-      "origin": "Hugging Face repository microsoft/OmniParser-v2.0",
-      "revision": "6600256cb0f1b07651e3bc86166196307bad7e2d",
-      "license": "AGPL-3.0-only",
+      "artifact": "omniparser-icon-detect-v3-1280-opset17.onnx",
+      "artifactSha256": "67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb",
+      "artifactSize": 232728858,
+      "exportSource": "source/cua-perception-source.tar.gz contains models/conversion-recipe.json and models/export_icon_detect_v3.py",
+      "license": "MIT",
+      "origin": "https://huggingface.co/microsoft/OmniParser-v2.0",
       "redistributionAllowed": true,
-      "verificationStatus": "release-verified",
-      "exportSource": "models/conversion-recipe.json and models/export_omniparser_detector.py in the Cua source archive, with principal exporter sources listed in source-ledger.json",
-      "sourceArtifact": {
-        "artifact": "omniparser-icon-detect-model.pt",
-        "path": "source/upstream/omniparser-icon-detect-model.pt",
-        "sha256": "dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57",
-        "size": 40623819
-      },
-      "usageRestrictions": ["AGPL-3.0-only: redistribution, and network use of this converted model, require the corresponding source bundled under source/; see THIRD_PARTY_NOTICES.md and SOURCE_OFFER.md"]
+      "revision": "f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4",
+      "verificationStatus": "conversion-verified",
+      "upstreamSource": {
+        "artifact": "icon_detect_v3/model.pt",
+        "license": "MIT",
+        "licenseSha256": "646f8936b8ddcd14e13e578ff6857e368780b0d1a4f6066bee89211923a373e2",
+        "licenseUrl": "https://huggingface.co/microsoft/OmniParser-v2.0/resolve/f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4/icon_detect_v3/LICENSE",
+        "sha256": "11c6cbb77f22569fab22d86c76407a83ec81ab89dbfe28279854822d6e3fb00c",
+        "size": 281182680,
+        "url": "https://huggingface.co/microsoft/OmniParser-v2.0/resolve/f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4/icon_detect_v3/model.pt"
+      }
     },
     {
       "artifact": "pp-ocrv5-mobile-det.onnx",

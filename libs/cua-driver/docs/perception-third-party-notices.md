@@ -17,60 +17,43 @@ a service.
 
 - **The Driver license does not cover the extension.** Cua Driver stays MIT
   licensed with or without the extension, because it talks to the extension
-  worker as a separate process over a protocol. The extension artifact has its
-  own licenses, and its OmniParser detector is AGPL-3.0-only. Cua does not
-  relicense that detector and does not describe it as MIT.
+  worker as a separate process over a protocol. The extension artifact carries
+  its own component licenses: MIT for the icon detector and ONNX Runtime,
+  Apache-2.0 for the PP-OCR models.
 - **The extension is opt-in.** A default Driver installation never installs the
-  extension or downloads model weights. If your organization does not accept
-  AGPL-licensed components, do not install the extension. Driver keeps working
-  and `parse_visual_regions` returns `not_installed`.
-- **Private use is unrestricted.** Running the extension on your own machines
-  does not trigger the AGPL's source-distribution obligations.
-- **Redistribution carries the AGPL obligations.** If you copy the extension
-  artifact to anyone else, include the AGPL-3.0 license text, the notices, the
-  model and source ledgers, the SBOM, and the corresponding source, including
-  the pinned source model and the conversion/export material listed below.
-- **Hosted services can trigger the network-use clause.** The shipped ONNX file
-  is a converted, and therefore modified, version of the upstream model. If
-  users interact with that model remotely through your service, AGPL-3.0
-  section 13 can require you to offer those users its corresponding source.
-  This applies to any product that embeds Cua Driver with the extension enabled.
-- **The corresponding source has an upstream limit.** Cua provides the pinned
-  upstream checkpoint, the conversion recipe, and the export script. The
-  upstream model repository does not publish training data or training code,
-  and Cua cannot supply them.
-- **The upstream origin is an Ultralytics YOLO model.** The OmniParser icon
-  detector is a fine-tuned YOLO model, and its AGPL-3.0 terms come from
-  Ultralytics. Ultralytics sells separate commercial licenses. Cua cannot grant
-  any right beyond the AGPL-3.0 terms, so you need your own agreement with the
-  rights holders if you need different terms.
+  extension or downloads model weights. Driver keeps working without it, and
+  `parse_visual_regions` returns `not_installed`.
+- **Redistribution keeps the notices.** If you copy the extension artifact to
+  anyone else, include the license texts under `licenses/`,
+  `THIRD_PARTY_NOTICES.md`, the model and source ledgers, and the SBOM. No
+  component in the bundle is copyleft, so no corresponding-source offer is
+  required.
+- **The earlier detector is retired.** Releases through 0.2.1 shipped the
+  AGPL-3.0-only `icon_detect` detector. The artifact lock lists its source
+  weights, its ONNX conversion, and the Ultralytics exporter snapshot as
+  prohibited digests, and bundle verification rejects any file or archive
+  member that matches them.
 - **No warranty.** The extension and its model artifacts are provided without
   warranty, as their licenses state. Detection output can be wrong. Do not use
   it as the sole basis for irreversible actions.
 
-## OmniParser icon detector
+## OmniParser icon detector (icon_detect_v3)
 
 - Origin: `microsoft/OmniParser-v2.0` model repository.
-- Pinned revision: `6600256cb0f1b07651e3bc86166196307bad7e2d`.
-- Source model: `icon_detect/model.pt`, SHA-256
-  `dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57`.
-- Reviewed converted ONNX artifact: SHA-256
-  `d8a876bf7f9fb73d7da9432904ade7fa78e092e9a91674e5a2806b45562a9ab2`.
-- Artifact license recorded by the release ledger: AGPL-3.0-only.
+- Pinned revision: `f55d0750e5b94db2125ef0b45b0fa4a85ddc59b4`.
+- Source model: `icon_detect_v3/model.pt` (YOLOv9-E, TorchScript), SHA-256
+  `11c6cbb77f22569fab22d86c76407a83ec81ab89dbfe28279854822d6e3fb00c`.
+- License: MIT, from `icon_detect_v3/LICENSE` at the same revision, SHA-256
+  `646f8936b8ddcd14e13e578ff6857e368780b0d1a4f6066bee89211923a373e2`.
+  Microsoft states the detector was trained with the MIT-licensed
+  MultimediaTechLab/YOLO implementation, which is what allows the permissive
+  license, unlike the Ultralytics-based `icon_detect`.
+- Converted ONNX artifact: SHA-256
+  `67f21c6aaf04ccadef08ab63328d08b0fde71bf7cef542ad3e3fe6aa438625eb`,
+  232,728,858 bytes, produced by `models/export_icon_detect_v3.py`.
 
-On 2026-09-24 the Cua maintainers decided to distribute this artifact under
-AGPL-3.0-only, and the release ledger marks it `release-verified`. This is a
-maintainer decision, not a legal opinion. Cua Perception packaging refuses an
-AGPL model that lacks its bundled source input. A distributor must preserve the
-AGPL-3.0-only license and notices and provide the corresponding source and
-pinned conversion/export material required for this artifact. Network use of a
-covered modified version may also trigger the license's corresponding-source
-requirements. The artifact must not be presented as MIT merely because Driver
-invokes it through an extension protocol.
-
-The OmniParser source repository's license for repository content and the
-separate model repository's artifact terms are different records. Verify the
-exact model revision above.
+This summary records the license Microsoft publishes with the pinned revision.
+It is not a legal opinion; verify the exact revision above.
 
 ## PP-OCRv5
 
@@ -99,9 +82,9 @@ exact version, target, SHA-256, license, notices, and source location in the
 artifact manifest and SBOM. These candidate records are not evidence that a
 particular runtime shipped.
 
-The reviewed OmniParser conversion used Python 3.12.13, PyTorch 2.8.0,
-torchvision 0.23.0, Ultralytics 8.3.199, ONNX 1.19.0, ONNX Runtime 1.22.1, opset
-17, a fixed 1280 input, graph simplification, and no model-side NMS. These are
+The icon_detect_v3 conversion used Python 3.12, PyTorch 2.8.0 and ONNX 1.19.0,
+opset 17, a fixed 1280 input, the model card's head decoding folded into the
+graph, and no model-side NMS. No Ultralytics code is involved. These are
 conversion-provenance inputs; the Rust worker has no Python runtime dependency.
 The ONNX Runtime version used during conversion does not establish which
 runtime library was packaged for a release.

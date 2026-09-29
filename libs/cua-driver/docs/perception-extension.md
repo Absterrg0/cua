@@ -189,12 +189,26 @@ after a worker failure, timeout, invalid frame, or resource-limit error.
 
 ## Distribution boundary
 
-The extension artifact has its own license and source obligations. The current
-candidate ledgers identify the OmniParser detector artifact as AGPL-3.0-only,
-the PP-OCR detector and recognizer artifacts as Apache-2.0, and the packaged
-ONNX Runtime by an exact version and hash selected at assembly time. Read the
-[perception third-party notices](perception-third-party-notices.md), including
-its precautions for redistribution and hosted services. A release
-must include the reviewed notices, ledgers, SBOM, source/conversion materials,
-and any corresponding-source offer required for the way the artifact is
-distributed or offered over a network.
+The extension artifact has its own license and notices. Its icon detector is
+Microsoft's MIT-licensed OmniParser `icon_detect_v3`; the PP-OCR detector and
+recognizer are Apache-2.0; each release's SBOM records the exact version and
+hash of the ONNX Runtime it packages. Read the
+[perception third-party notices](perception-third-party-notices.md). A release
+must include the reviewed notices, license texts, ledgers, and SBOM.
+
+## Embedded SDK hosts and downstream publishers
+
+`CuaDriver.create()` runs the Driver in the host process and resolves the
+extension from the same verified store as the daemon, under
+`CUA_DRIVER_RS_HOME` when it is set. Such a host installs or updates the
+extension through the `install_extension` host tool: set
+`CUA_DRIVER_PERCEPTION_CATALOG` to the signed catalog before the call, call
+once without `confirm` to receive the verified plan and its `plan_sha256`, then
+call again with `confirm: true` and that digest. `extension_status` reports the
+installed version, health, and trust class without running the worker.
+
+A distribution that ships its own signed perception artifact builds the Driver
+with its publisher root in all six `CUA_DRIVER_EXTENSION_*` build variables and
+signs its catalogs with the matching key, passing `--trust-root` to
+`perception_release.py package`. Such a build accepts only that publisher's
+catalogs; keep its `CUA_DRIVER_RS_HOME` separate from a stock Cua installation.

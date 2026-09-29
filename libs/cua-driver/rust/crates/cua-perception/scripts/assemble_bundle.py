@@ -257,7 +257,7 @@ def model_ledger(lock: dict[str, Any]) -> dict[str, Any]:
             "exportSource": "source/cua-perception-source.tar.gz contains models/conversion-recipe.json and models/export_icon_detect_v3.py",
         }
         if entry["role"] == "icon-detect":
-            model["sourceArtifact"] = {
+            model["upstreamSource"] = {
                 "artifact": "icon_detect_v3/model.pt", "url": entry["source_url"],
                 "sha256": entry["source_sha256"], "size": entry["source_size"],
                 "license": entry["license"], "licenseUrl": entry["source_license_url"],
