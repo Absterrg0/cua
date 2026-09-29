@@ -2,6 +2,14 @@
 
 All notable changes to Cua Perception release candidates are documented here.
 
+## 0.3.0 (Absterrg0 distribution, 2026-09-29)
+
+
+### Features
+
+* **cua-perception:** replace the AGPL OmniParser `icon_detect` detector with Microsoft's MIT-licensed `icon_detect_v3` (YOLOv9-E), converted to the existing `xyxy_score_class` layout
+* **cua-perception:** reject retired AGPL detector digests, copyleft license declarations, and prohibited names anywhere in a bundle
+
 ## [0.2.1](https://github.com/trycua/cua/compare/cua-perception-v0.2.0...cua-perception-v0.2.1) (2026-09-25)
 
 
