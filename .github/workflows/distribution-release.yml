@@ -246,8 +246,9 @@ jobs:
           stage="$RUNNER_TEMP/npm"; mkdir -p "$stage"
           # The Electron-compatible Node runtime is unchanged from upstream;
           # take it from the matching published package.
-          ( cd "$RUNNER_TEMP" && npm pack "$name@$UPSTREAM_SDK_VERSION" --silent > upstream.txt )
-          tar -xzf "$RUNNER_TEMP/$(cat "$RUNNER_TEMP/upstream.txt")" -C "$stage"
+          # Relative paths: GNU tar on Windows reads "D:\..." as a remote host.
+          ( cd "$RUNNER_TEMP" && npm pack "$name@$UPSTREAM_SDK_VERSION" --silent > upstream.txt \
+            && tar -xzf "$(cat upstream.txt)" -C npm )
           cp "native/${{ matrix.library }}" "$stage/package/"
           node -e '
             const fs = require("fs"); const p = process.argv[1] + "/package/package.json";
